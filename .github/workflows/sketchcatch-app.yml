@@ -1,0 +1,61 @@
+name: SketchCatch App
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "**"
+      - "!sketchcatch/demo2/terraform/**"
+      - "!sketchcatch/demo2/ci-cd/**"
+      - '!.github/workflows/sketchcatch-infra.yml'
+      - '!.github/workflows/sketchcatch-app.yml'
+      - '!.github/workflows/sketchcatch-destroy.yml'
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  SKETCHCATCH_RELEASE_API_URL: ${{ vars.SKETCHCATCH_RELEASE_API_URL }}
+  SKETCHCATCH_PROJECT_ID: ${{ vars.SKETCHCATCH_PROJECT_ID }}
+  SKETCHCATCH_OIDC_AUDIENCE: sketchcatch-release-run
+  SKETCHCATCH_RELEASE_SHA: ${{ github.sha }}
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    environment: sketchcatch-production
+    steps:
+      - name: Request trusted SketchCatch release
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SKETCHCATCH_RELEASE_API_URL"
+          test -n "$SKETCHCATCH_PROJECT_ID"
+          OIDC_TOKEN=$(curl --fail --silent --show-error             --header "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN"             "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$SKETCHCATCH_OIDC_AUDIENCE" | jq -er '.value')
+          IDEMPOTENCY_KEY="${{ github.repository_id }}:$SKETCHCATCH_RELEASE_SHA:${{ github.run_id }}:${{ github.run_attempt }}"
+          jq -n             --arg repository "${{ github.repository }}"             --arg repositoryId "${{ github.repository_id }}"             --arg commitSha "$SKETCHCATCH_RELEASE_SHA"             --arg ref "${{ github.ref }}"             --arg workflow "${{ github.workflow_ref }}"             --arg runId "${{ github.run_id }}"             --arg runAttempt "${{ github.run_attempt }}"             --arg runUrl "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"             '{repository:$repository,repositoryId:$repositoryId,commitSha:$commitSha,ref:$ref,workflow:$workflow,workflowRunId:$runId,workflowRunAttempt:($runAttempt|tonumber),workflowRunUrl:$runUrl}' > release-request.json
+          curl --fail --silent --show-error             --request POST             --header "Authorization: Bearer $OIDC_TOKEN"             --header "Content-Type: application/json"             --header "Idempotency-Key: $IDEMPOTENCY_KEY"             --data @release-request.json             "${SKETCHCATCH_RELEASE_API_URL%/}/api/git-cicd/projects/$SKETCHCATCH_PROJECT_ID/release-runs" > release-run.json
+          RELEASE_RUN_ID=$(jq -er '.run.id' release-run.json)
+          echo "run_id=$RELEASE_RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "SketchCatch release run: $RELEASE_RUN_ID"
+      - name: Wait for trusted release
+        shell: bash
+        env:
+          SKETCHCATCH_RELEASE_RUN_ID: ${{ steps.release.outputs.run_id }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 180); do
+            OIDC_TOKEN=$(curl --fail --silent --show-error               --header "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN"               "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$SKETCHCATCH_OIDC_AUDIENCE" | jq -er '.value')
+            curl --fail --silent --show-error               --header "Authorization: Bearer $OIDC_TOKEN"               "${SKETCHCATCH_RELEASE_API_URL%/}/api/git-cicd/release-runs/$SKETCHCATCH_RELEASE_RUN_ID" > release-run.json
+            STATUS=$(jq -er '.run.status' release-run.json)
+            echo "SketchCatch release status: $STATUS"
+            case "$STATUS" in
+              succeeded) exit 0 ;;
+              failed|cancelled|partially_failed|partially_cancelled) jq . release-run.json; exit 1 ;;
+            esac
+            sleep 5
+          done
+          echo "SketchCatch release status polling timed out" >&2
+          exit 1

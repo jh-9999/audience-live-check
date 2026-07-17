@@ -1,0 +1,230 @@
+name: SketchCatch Infra
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  TF_IN_AUTOMATION: "true"
+  SKETCHCATCH_RELEASE_API_URL: ${{ vars.SKETCHCATCH_RELEASE_API_URL }}
+  SKETCHCATCH_PROJECT_ID: ${{ vars.SKETCHCATCH_PROJECT_ID }}
+  SKETCHCATCH_OIDC_AUDIENCE: sketchcatch-infrastructure-run
+  SKETCHCATCH_AWS_REGION: ${{ vars.SKETCHCATCH_AWS_REGION }}
+  SKETCHCATCH_TF_STATE_BUCKET: ${{ vars.SKETCHCATCH_TF_STATE_BUCKET }}
+  SKETCHCATCH_TF_STATE_KEY: ${{ vars.SKETCHCATCH_TF_STATE_KEY }}
+  TF_VAR_rds_enabled: ${{ vars.SKETCHCATCH_RDS_ENABLED }}
+
+jobs:
+  deploy:
+    environment: sketchcatch-production
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sketchcatch/demo2/terraform
+    steps:
+      - name: Register SketchCatch infrastructure run
+        id: register
+        shell: bash
+        working-directory: .
+        run: |
+          set -euo pipefail
+          test -n "$SKETCHCATCH_RELEASE_API_URL"
+          test -n "$SKETCHCATCH_PROJECT_ID"
+          OIDC_TOKEN=$(curl --fail --silent --show-error --header "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$SKETCHCATCH_OIDC_AUDIENCE" | jq -er '.value')
+          jq -n             --arg repository "${{ github.repository }}"             --arg repositoryId "${{ github.repository_id }}"             --arg commitSha "${{ github.sha }}"             --arg ref "${{ github.ref }}"             --arg workflow "${{ github.workflow_ref }}"             --arg runId "${{ github.run_id }}"             --arg runAttempt "${{ github.run_attempt }}"             --arg runUrl "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"             '{repository:$repository,repositoryId:$repositoryId,commitSha:$commitSha,ref:$ref,workflow:$workflow,workflowRunId:$runId,workflowRunAttempt:($runAttempt|tonumber),workflowRunUrl:$runUrl}' > infrastructure-run-request.json
+          curl --fail --silent --show-error             --request POST             --header "Authorization: Bearer $OIDC_TOKEN"             --header "Content-Type: application/json"             --data @infrastructure-run-request.json             "${SKETCHCATCH_RELEASE_API_URL%/}/api/git-cicd/projects/$SKETCHCATCH_PROJECT_ID/infrastructure-runs" > infrastructure-run.json
+          INFRA_RUN_ID=$(jq -er '.run.id' infrastructure-run.json)
+          echo "run_id=$INFRA_RUN_ID" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        id: checkout
+        continue-on-error: true
+        with:
+          ref: ${{ github.sha }}
+      - uses: hashicorp/setup-terraform@v3
+        id: terraform
+        continue-on-error: true
+      - uses: aws-actions/configure-aws-credentials@v4
+        id: aws
+        continue-on-error: true
+        with:
+          role-to-assume: ${{ vars.SKETCHCATCH_AWS_ROLE_ARN }}
+          aws-region: ${{ vars.SKETCHCATCH_AWS_REGION }}
+      - name: Prepare Terraform
+        id: prepare
+        if: steps.checkout.outcome == 'success' && steps.terraform.outcome == 'success' && steps.aws.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        env:
+          SKETCHCATCH_INFRA_RUN_ID: ${{ steps.register.outputs.run_id }}
+        run: |
+          set -euo pipefail
+          request_oidc_token() {
+            curl --fail --silent --show-error --header "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$SKETCHCATCH_OIDC_AUDIENCE" | jq -er '.value'
+          }
+          send_heartbeat() {
+            OIDC_TOKEN=$(request_oidc_token)
+            curl --fail --silent --show-error --request POST --header "Authorization: Bearer $OIDC_TOKEN" "${SKETCHCATCH_RELEASE_API_URL%/}/api/git-cicd/infrastructure-runs/$SKETCHCATCH_INFRA_RUN_ID/heartbeat" >/dev/null
+          }
+          run_with_heartbeat() {
+            "$@" &
+            command_pid=$!
+            while kill -0 "$command_pid" 2>/dev/null; do
+              sleep 30
+              if ! kill -0 "$command_pid" 2>/dev/null; then
+                break
+              fi
+              if ! send_heartbeat; then
+                kill "$command_pid" 2>/dev/null || true
+                wait "$command_pid" 2>/dev/null || true
+                return 1
+              fi
+            done
+            set +e
+            wait "$command_pid"
+            status=$?
+            set -e
+            return "$status"
+          }
+          send_heartbeat
+          if ! run_with_heartbeat aws s3api head-bucket --bucket "$SKETCHCATCH_TF_STATE_BUCKET"; then
+            run_with_heartbeat aws s3api create-bucket --bucket "$SKETCHCATCH_TF_STATE_BUCKET" --region "$SKETCHCATCH_AWS_REGION" --create-bucket-configuration LocationConstraint="$SKETCHCATCH_AWS_REGION"
+          fi
+          send_heartbeat
+          cat > backend.auto.tfbackend <<EOF
+          bucket = "$SKETCHCATCH_TF_STATE_BUCKET"
+          key    = "$SKETCHCATCH_TF_STATE_KEY"
+          region = "$SKETCHCATCH_AWS_REGION"
+          EOF
+          if grep -R --include='*.tf' -Eq 'backend[[:space:]]+"[^"]+"' .; then
+            grep -R --include='*.tf' -Eq 'backend[[:space:]]+"s3"' . || {
+              echo "::error::Existing Terraform backend must be s3."
+              exit 1
+            }
+          else
+            echo 'terraform { backend "s3" {} }' > sketchcatch-backend.tf
+          fi
+          run_with_heartbeat terraform init -backend-config=backend.auto.tfbackend
+          send_heartbeat
+          run_with_heartbeat terraform validate
+          send_heartbeat
+      - name: Terraform Plan
+        id: plan
+        if: steps.prepare.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        env:
+          SKETCHCATCH_INFRA_RUN_ID: ${{ steps.register.outputs.run_id }}
+        run: |
+          set -euo pipefail
+          request_oidc_token() {
+            curl --fail --silent --show-error --header "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$SKETCHCATCH_OIDC_AUDIENCE" | jq -er '.value'
+          }
+          send_heartbeat() {
+            OIDC_TOKEN=$(request_oidc_token)
+            curl --fail --silent --show-error --request POST --header "Authorization: Bearer $OIDC_TOKEN" "${SKETCHCATCH_RELEASE_API_URL%/}/api/git-cicd/infrastructure-runs/$SKETCHCATCH_INFRA_RUN_ID/heartbeat" >/dev/null
+          }
+          run_with_heartbeat() {
+            "$@" &
+            command_pid=$!
+            while kill -0 "$command_pid" 2>/dev/null; do
+              sleep 30
+              if ! kill -0 "$command_pid" 2>/dev/null; then
+                break
+              fi
+              if ! send_heartbeat; then
+                kill "$command_pid" 2>/dev/null || true
+                wait "$command_pid" 2>/dev/null || true
+                return 1
+              fi
+            done
+            set +e
+            wait "$command_pid"
+            status=$?
+            set -e
+            return "$status"
+          }
+          send_heartbeat
+          run_with_heartbeat terraform plan -out=tfplan
+          send_heartbeat
+          terraform show -json tfplan > tfplan.json
+      - uses: actions/upload-artifact@v4
+        if: steps.plan.outcome == 'success'
+        with:
+          name: sketchcatch-tfplan-json
+          path: sketchcatch/demo2/terraform/tfplan.json
+      - name: Terraform Apply
+        id: apply
+        if: steps.plan.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        env:
+          SKETCHCATCH_INFRA_RUN_ID: ${{ steps.register.outputs.run_id }}
+        run: |
+          set -euo pipefail
+          request_oidc_token() {
+            curl --fail --silent --show-error --header "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$SKETCHCATCH_OIDC_AUDIENCE" | jq -er '.value'
+          }
+          send_heartbeat() {
+            OIDC_TOKEN=$(request_oidc_token)
+            curl --fail --silent --show-error --request POST --header "Authorization: Bearer $OIDC_TOKEN" "${SKETCHCATCH_RELEASE_API_URL%/}/api/git-cicd/infrastructure-runs/$SKETCHCATCH_INFRA_RUN_ID/heartbeat" >/dev/null
+          }
+          run_with_heartbeat() {
+            "$@" &
+            command_pid=$!
+            while kill -0 "$command_pid" 2>/dev/null; do
+              sleep 30
+              if ! kill -0 "$command_pid" 2>/dev/null; then
+                break
+              fi
+              if ! send_heartbeat; then
+                kill "$command_pid" 2>/dev/null || true
+                wait "$command_pid" 2>/dev/null || true
+                return 1
+              fi
+            done
+            set +e
+            wait "$command_pid"
+            status=$?
+            set -e
+            return "$status"
+          }
+          send_heartbeat
+          run_with_heartbeat terraform apply -auto-approve tfplan
+          send_heartbeat
+          terraform output -json > sketchcatch-outputs.json
+      - uses: actions/upload-artifact@v4
+        if: steps.apply.outcome == 'success'
+        with:
+          name: sketchcatch-terraform-outputs
+          path: sketchcatch/demo2/terraform/sketchcatch-outputs.json
+      - name: Report SketchCatch infrastructure result
+        if: always() && steps.register.outputs.run_id != ''
+        shell: bash
+        working-directory: .
+        env:
+          SKETCHCATCH_INFRA_RUN_ID: ${{ steps.register.outputs.run_id }}
+        run: |
+          set -euo pipefail
+          if [ "${{ cancelled() }}" = "true" ]; then
+            CONCLUSION=cancelled
+            STAGE=configuration
+          elif [ "${{ steps.checkout.outcome }}" != "success" ] ||                [ "${{ steps.terraform.outcome }}" != "success" ] ||                [ "${{ steps.aws.outcome }}" != "success" ] ||                [ "${{ steps.prepare.outcome }}" != "success" ]; then
+            CONCLUSION=failed
+            STAGE=configuration
+          elif [ "${{ steps.plan.outcome }}" != "success" ]; then
+            CONCLUSION=failed
+            STAGE=infra_plan
+          elif [ "${{ steps.apply.outcome }}" != "success" ]; then
+            CONCLUSION=failed
+            STAGE=infra_apply
+          else
+            CONCLUSION=succeeded
+            STAGE=infra_apply
+          fi
+          OIDC_TOKEN=$(curl --fail --silent --show-error --header "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$SKETCHCATCH_OIDC_AUDIENCE" | jq -er '.value')
+          jq -n --arg conclusion "$CONCLUSION" --arg stage "$STAGE" '{conclusion:$conclusion,stage:$stage}' > infrastructure-run-result.json
+          curl --fail --silent --show-error             --request POST             --header "Authorization: Bearer $OIDC_TOKEN"             --header "Content-Type: application/json"             --data @infrastructure-run-result.json             "${SKETCHCATCH_RELEASE_API_URL%/}/api/git-cicd/infrastructure-runs/$SKETCHCATCH_INFRA_RUN_ID/complete" >/dev/null
+          test "$CONCLUSION" = succeeded

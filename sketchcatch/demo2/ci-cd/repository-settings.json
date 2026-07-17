@@ -1,0 +1,35 @@
+{
+  "environmentName": "sketchcatch-production",
+  "variables": {
+    "SKETCHCATCH_AWS_REGION": "ap-northeast-2",
+    "SKETCHCATCH_AWS_ROLE_ARN": "arn:aws:iam::131404649047:role/SketchCatchTerraformExecutionRole-a0a6cbbb",
+    "SKETCHCATCH_TF_STATE_BUCKET": "sketchcatch-tfstate-jh-9999-audience-live-check",
+    "SKETCHCATCH_TF_STATE_KEY": "demo2/terraform.tfstate",
+    "SKETCHCATCH_RELEASE_BUCKET": "sketchcatch-release-jh-9999-audience-live-check",
+    "SKETCHCATCH_RDS_ENABLED": "false",
+    "SKETCHCATCH_STATIC_SITE_URL": "",
+    "SKETCHCATCH_API_BASE_URL": "",
+    "SKETCHCATCH_RELEASE_API_URL": "https://localhost:3000",
+    "SKETCHCATCH_PROJECT_ID": "fdac763f-0fc9-4526-9e85-6d46a7c7036c",
+    "SKETCHCATCH_ASG_NAME": "",
+    "SKETCHCATCH_STATIC_BUCKET": "",
+    "SKETCHCATCH_CLOUDFRONT_DISTRIBUTION_ID": "",
+    "SKETCHCATCH_CLOUDFRONT_ORIGIN_ID": "",
+    "SKETCHCATCH_CODEBUILD_PROJECT": "sketchcatch-fdac763f-build",
+    "SKETCHCATCH_ECR_REPOSITORY": "audience-live-check-api",
+    "SKETCHCATCH_LAMBDA_FUNCTION": "",
+    "SKETCHCATCH_LAMBDA_ALIAS": "",
+    "SKETCHCATCH_CODEDEPLOY_APPLICATION": "",
+    "SKETCHCATCH_CODEDEPLOY_GROUP": "",
+    "SKETCHCATCH_ECS_CLUSTER": "audience-live-check-cluster",
+    "SKETCHCATCH_ECS_SERVICE": "audience-live-check-service",
+    "SKETCHCATCH_ECS_CONTAINER": "api",
+    "SKETCHCATCH_OUTPUT_URL": "https://d3w3jtrnoenf52.cloudfront.net"
+  },
+  "secrets": [],
+  "workflowFiles": [
+    ".github/workflows/sketchcatch-infra.yml",
+    ".github/workflows/sketchcatch-app.yml",
+    ".github/workflows/sketchcatch-destroy.yml"
+  ]
+}
