@@ -208,7 +208,7 @@ jobs:
           SKETCHCATCH_INFRA_RUN_ID: ${{ steps.register.outputs.run_id }}
         run: |
           set -euo pipefail
-          if [ "${{ cancelled() }}" = "true" ]; then
+          if [ "${{ job.status }}" = "cancelled" ]; then
             CONCLUSION=cancelled
             STAGE=configuration
           elif [ "${{ steps.checkout.outcome }}" != "success" ] ||                [ "${{ steps.terraform.outcome }}" != "success" ] ||                [ "${{ steps.aws.outcome }}" != "success" ] ||                [ "${{ steps.prepare.outcome }}" != "success" ]; then
