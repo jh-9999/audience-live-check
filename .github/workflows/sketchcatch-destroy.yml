@@ -1,0 +1,57 @@
+name: SketchCatch Destroy
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  SKETCHCATCH_AWS_REGION: ${{ vars.SKETCHCATCH_AWS_REGION }}
+  SKETCHCATCH_TF_STATE_BUCKET: ${{ vars.SKETCHCATCH_TF_STATE_BUCKET }}
+  SKETCHCATCH_TF_STATE_KEY: ${{ vars.SKETCHCATCH_TF_STATE_KEY }}
+  TF_VAR_rds_enabled: ${{ vars.SKETCHCATCH_RDS_ENABLED }}
+
+jobs:
+  destroy:
+    runs-on: ubuntu-latest
+    environment: sketchcatch-production
+    defaults:
+      run:
+        working-directory: sketchcatch/demo/terraform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.SKETCHCATCH_AWS_ROLE_ARN }}
+          aws-region: ${{ vars.SKETCHCATCH_AWS_REGION }}
+      - name: Restore backend
+        shell: bash
+        run: |
+          cat > backend.auto.tfbackend <<EOF
+          bucket = "$SKETCHCATCH_TF_STATE_BUCKET"
+          key    = "$SKETCHCATCH_TF_STATE_KEY"
+          region = "$SKETCHCATCH_AWS_REGION"
+          EOF
+          if grep -R --include='*.tf' -Eq 'backend[[:space:]]+"[^"]+"' .; then
+            grep -R --include='*.tf' -Eq 'backend[[:space:]]+"s3"' . || {
+              echo "::error::Existing Terraform backend must be s3."
+              exit 1
+            }
+          else
+            echo 'terraform { backend "s3" {} }' > sketchcatch-backend.tf
+          fi
+      - run: terraform init -backend-config=backend.auto.tfbackend
+      - run: terraform destroy -auto-approve
+      - name: Best-effort release cleanup
+        if: always()
+        shell: bash
+        run: |
+          aws s3 rm "s3://${{ vars.SKETCHCATCH_RELEASE_BUCKET }}/releases/" --recursive || true
+          aws s3 rm "s3://${{ vars.SKETCHCATCH_RELEASE_BUCKET }}/lambda/" --recursive || true
+          aws s3 rm "s3://${{ vars.SKETCHCATCH_RELEASE_BUCKET }}/demo/ec2-asg/" --recursive || true
+          if [ -n "${{ vars.SKETCHCATCH_STATIC_BUCKET }}" ]; then
+            aws s3 rm "s3://${{ vars.SKETCHCATCH_STATIC_BUCKET }}/releases/" --recursive || true
+          fi
