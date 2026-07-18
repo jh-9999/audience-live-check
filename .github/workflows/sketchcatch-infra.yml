@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: sketchcatch/demo2/terraform
+        working-directory: sketchcatch/demo/terraform
     steps:
       - name: Register SketchCatch infrastructure run
         id: register
@@ -154,7 +154,7 @@ jobs:
         if: steps.plan.outcome == 'success'
         with:
           name: sketchcatch-tfplan-json
-          path: sketchcatch/demo2/terraform/tfplan.json
+          path: sketchcatch/demo/terraform/tfplan.json
       - name: Terraform Apply
         id: apply
         if: steps.plan.outcome == 'success'
@@ -199,7 +199,7 @@ jobs:
         if: steps.apply.outcome == 'success'
         with:
           name: sketchcatch-terraform-outputs
-          path: sketchcatch/demo2/terraform/sketchcatch-outputs.json
+          path: sketchcatch/demo/terraform/sketchcatch-outputs.json
       - name: Report SketchCatch infrastructure result
         if: always() && steps.register.outputs.run_id != ''
         shell: bash
