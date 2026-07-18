@@ -19,7 +19,7 @@ export function CheckInApp(): ReactElement {
     <main className="page-shell">
       <section className="check-in-panel" aria-labelledby="service-title">
         <p className="eyebrow">LIVE CHECK-IN</p>
-        <h1 id="service-title">발표 데모에 참여해 주세요. 안녕하세요 반갑습니다 </h1>
+        <h1 id="service-title">발표 데모에 참여해 주세요. 펭펭이</h1>
         <p className="privacy-note">별도의 개인정보는 저장하지 않습니다.</p>
         <button
           className="check-in-button"
