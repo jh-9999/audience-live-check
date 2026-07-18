@@ -19,7 +19,7 @@ jobs:
     environment: sketchcatch-production
     defaults:
       run:
-        working-directory: sketchcatch/demo2/terraform
+        working-directory: sketchcatch/demo/terraform
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
@@ -51,7 +51,7 @@ jobs:
         run: |
           aws s3 rm "s3://${{ vars.SKETCHCATCH_RELEASE_BUCKET }}/releases/" --recursive || true
           aws s3 rm "s3://${{ vars.SKETCHCATCH_RELEASE_BUCKET }}/lambda/" --recursive || true
-          aws s3 rm "s3://${{ vars.SKETCHCATCH_RELEASE_BUCKET }}/demo2/ec2-asg/" --recursive || true
+          aws s3 rm "s3://${{ vars.SKETCHCATCH_RELEASE_BUCKET }}/demo/ec2-asg/" --recursive || true
           if [ -n "${{ vars.SKETCHCATCH_STATIC_BUCKET }}" ]; then
             aws s3 rm "s3://${{ vars.SKETCHCATCH_STATIC_BUCKET }}/releases/" --recursive || true
           fi
