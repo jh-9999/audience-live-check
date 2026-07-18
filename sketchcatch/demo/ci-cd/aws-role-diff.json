@@ -1,5 +1,5 @@
 {
-  "roleArn": "arn:aws:iam::724702275121:role/SketchCatchTerraformExecutionRole-ee0c1542",
+  "roleArn": "arn:aws:iam::724702275121:role/SketchCatchTerraformExecutionRole-3ec9ad2b",
   "repository": "jh-9999/audience-live-check",
   "targetBranch": "main",
   "environmentName": "sketchcatch-production",
