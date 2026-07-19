@@ -39,18 +39,17 @@ describe("CheckInApp", () => {
     expect(screen.getByRole("button", { name: "참여하기" })).toBeEnabled();
   });
 
-  it("starts one session, disables duplicate clicks, and sends a heartbeat", async () => {
+  it("starts a fresh session for each request and cancels the previous heartbeat", async () => {
+    const heartbeatSignals: AbortSignal[] = [];
     mockedCreateCheckIn.mockResolvedValue(session());
-    mockedSendHeartbeat.mockResolvedValue({
-      ok: true,
-      receivedAt: new Date().toISOString(),
-      servedBy: "test-api",
+    mockedSendHeartbeat.mockImplementation((_sessionToken, signal) => {
+      heartbeatSignals.push(signal);
+      return new Promise(() => undefined);
     });
     render(<CheckInApp />);
     const button = screen.getByRole("button", { name: "참여하기" });
 
     await act(async () => {
-      fireEvent.click(button);
       fireEvent.click(button);
       await Promise.resolve();
       await Promise.resolve();
@@ -58,12 +57,19 @@ describe("CheckInApp", () => {
 
     expect(mockedCreateCheckIn).toHaveBeenCalledTimes(1);
     expect(mockedSendHeartbeat).toHaveBeenCalledTimes(1);
-    expect(mockedSendHeartbeat).toHaveBeenCalledWith(
-      "payload.signature",
-      expect.any(AbortSignal),
-    );
+    expect(screen.getByRole("button", { name: "다시 요청하기" })).toBeEnabled();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "다시 요청하기" }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mockedCreateCheckIn).toHaveBeenCalledTimes(2);
+    expect(mockedSendHeartbeat).toHaveBeenCalledTimes(2);
+    expect(heartbeatSignals[0]?.aborted).toBe(true);
+    expect(heartbeatSignals[1]?.aborted).toBe(false);
     expect(screen.getByText("✓ 참여 중 · 연결됨")).toBeInTheDocument();
-    expect(button).toBeDisabled();
   });
 
   it("waits for each heartbeat before scheduling the next one", async () => {

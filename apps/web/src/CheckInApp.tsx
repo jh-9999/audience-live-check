@@ -4,8 +4,7 @@ import "./styles.css";
 
 export function CheckInApp(): ReactElement {
   const { status, message, servedBy, start } = useCheckIn();
-  const isButtonDisabled =
-    status === "starting" || status === "active" || status === "completed";
+  const isButtonDisabled = status === "starting";
   const statusLabel =
     status === "starting"
       ? "참여 시작 중"
@@ -36,9 +35,9 @@ export function CheckInApp(): ReactElement {
           {status === "starting"
             ? "참여 중..."
             : status === "active"
-              ? "참여 중..."
+              ? "다시 요청하기"
               : status === "completed"
-                ? "참여 완료"
+                ? "다시 요청하기"
                 : "참여하기"}
         </button>
         {statusLabel !== null ? (

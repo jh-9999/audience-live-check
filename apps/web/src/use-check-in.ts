@@ -170,9 +170,8 @@ export function useCheckIn(): CheckInState & { readonly start: () => void } {
   );
 
   const start = useCallback((): void => {
-    if (controllerRef.current !== null) {
-      return;
-    }
+    controllerRef.current?.abort();
+    clearStoredSession();
 
     lastServedByRef.current = null;
     updateState({
