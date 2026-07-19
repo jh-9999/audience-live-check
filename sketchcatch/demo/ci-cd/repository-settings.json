@@ -2,7 +2,7 @@
   "environmentName": "sketchcatch-production",
   "variables": {
     "SKETCHCATCH_AWS_REGION": "ap-northeast-2",
-    "SKETCHCATCH_AWS_ROLE_ARN": "arn:aws:iam::724702275121:role/SketchCatchTerraformExecutionRole-3ec9ad2b",
+    "SKETCHCATCH_AWS_ROLE_ARN": "arn:aws:iam::724702275121:role/SketchCatchTerraformExecutionRole-ddc06480",
     "SKETCHCATCH_TF_STATE_BUCKET": "sketchcatch-tfstate-jh-9999-audience-live-check",
     "SKETCHCATCH_TF_STATE_KEY": "demo/terraform.tfstate",
     "SKETCHCATCH_RELEASE_BUCKET": "sketchcatch-release-jh-9999-audience-live-check",
@@ -10,12 +10,12 @@
     "SKETCHCATCH_STATIC_SITE_URL": "",
     "SKETCHCATCH_API_BASE_URL": "",
     "SKETCHCATCH_RELEASE_API_URL": "https://sketchcatch.net",
-    "SKETCHCATCH_PROJECT_ID": "88870e40-fbb8-4c86-b5de-ab4b8cd6310e",
+    "SKETCHCATCH_PROJECT_ID": "7b618d82-b26b-49c2-98d3-c05a4c274a1a",
     "SKETCHCATCH_ASG_NAME": "",
     "SKETCHCATCH_STATIC_BUCKET": "",
     "SKETCHCATCH_CLOUDFRONT_DISTRIBUTION_ID": "",
     "SKETCHCATCH_CLOUDFRONT_ORIGIN_ID": "",
-    "SKETCHCATCH_CODEBUILD_PROJECT": "sketchcatch-88870e40-build",
+    "SKETCHCATCH_CODEBUILD_PROJECT": "sketchcatch-7b618d82-build",
     "SKETCHCATCH_ECR_REPOSITORY": "audience-live-check-api",
     "SKETCHCATCH_LAMBDA_FUNCTION": "",
     "SKETCHCATCH_LAMBDA_ALIAS": "",
@@ -24,7 +24,7 @@
     "SKETCHCATCH_ECS_CLUSTER": "audience-live-check-cluster",
     "SKETCHCATCH_ECS_SERVICE": "audience-live-check-service",
     "SKETCHCATCH_ECS_CONTAINER": "api",
-    "SKETCHCATCH_OUTPUT_URL": "https://d39gai2qofz4l3.cloudfront.net"
+    "SKETCHCATCH_OUTPUT_URL": "https://d39l3m2yi663jh.cloudfront.net"
   },
   "secrets": [],
   "workflowFiles": [
