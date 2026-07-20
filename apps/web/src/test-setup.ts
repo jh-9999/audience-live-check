@@ -22,10 +22,12 @@ const localStorage: Storage = {
   },
 };
 
-Object.defineProperty(window, "localStorage", {
-  configurable: true,
-  value: localStorage,
-});
+if (typeof window !== "undefined") {
+  Object.defineProperty(window, "localStorage", {
+    configurable: true,
+    value: localStorage,
+  });
+}
 
 const values = new Map<string, string>();
 const storage: Storage = {
@@ -39,7 +41,9 @@ const storage: Storage = {
   setItem: (key, value) => values.set(key, value),
 };
 
-Object.defineProperty(window, "localStorage", {
-  configurable: true,
-  value: storage,
-});
+if (typeof window !== "undefined") {
+  Object.defineProperty(window, "localStorage", {
+    configurable: true,
+    value: storage,
+  });
+}

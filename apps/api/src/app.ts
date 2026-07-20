@@ -10,27 +10,33 @@ import express, {
   type Response,
 } from "express";
 import pino, { type Logger } from "pino";
-import { z } from "zod";
 import type { ApiConfig } from "./config.js";
 import { loadConfig } from "./config.js";
-import { CheckInSessionStore, SessionCapacityError } from "./session-store.js";
+import { SessionTokenService } from "./session-token.js";
 
 type AppOptions = {
   readonly config?: ApiConfig;
-  readonly store?: CheckInSessionStore;
+  readonly tokenService?: SessionTokenService;
   readonly logger?: Logger;
 };
 
-const sessionIdSchema = z.string().uuid();
+const bearerTokenPattern = /^Bearer ([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)$/;
 
 export function createApp(options: AppOptions = {}): Express {
   const config = options.config ?? loadConfig();
-  const store = options.store ?? new CheckInSessionStore();
+  const tokenService =
+    options.tokenService ??
+    new SessionTokenService({ signingSecret: config.signingSecret });
   const logger = options.logger ?? pino({ base: null });
   const app = express();
 
   app.disable("x-powered-by");
-  app.use(cors({ origin: config.webOrigin }));
+  app.use(
+    cors({
+      origin: config.webOrigin,
+      allowedHeaders: ["Authorization", "Content-Type"],
+    }),
+  );
   app.use(express.json({ limit: "16kb" }));
   app.use(createRequestLogger(logger));
 
@@ -44,37 +50,19 @@ export function createApp(options: AppOptions = {}): Express {
   });
 
   app.post("/api/check-ins", (_request, response) => {
-    try {
-      response.status(201).json(store.create());
-    } catch (error) {
-      if (error instanceof SessionCapacityError) {
-        response.status(503).json({
-          error: "capacity_reached",
-          message: "현재 참여 요청이 많습니다. 잠시 후 다시 시도해 주세요.",
-        });
-        return;
-      }
-      throw error;
-    }
+    response.status(201).json(tokenService.issue());
   });
 
-  app.post("/api/check-ins/:sessionId/heartbeat", (request, response) => {
-    const parsedSessionId = sessionIdSchema.safeParse(
-      request.params["sessionId"],
-    );
-    if (!parsedSessionId.success) {
-      response.status(400).json({
-        error: "invalid_session",
-        message: "유효하지 않은 session ID입니다.",
-      });
-      return;
-    }
+  app.post("/api/check-ins/heartbeat", (request, response) => {
+    const authorization = request.get("authorization") ?? "";
+    const match = bearerTokenPattern.exec(authorization);
+    const result =
+      match?.[1] === undefined ? null : tokenService.verify(match[1]);
 
-    const result = store.heartbeat(parsedSessionId.data);
-    if (!result.ok) {
-      response.status(400).json({
+    if (result === null || !result.ok) {
+      response.status(401).json({
         error: "invalid_session",
-        message: "유효하지 않거나 만료된 session ID입니다.",
+        message: "유효하지 않거나 만료된 session token입니다.",
       });
       return;
     }
@@ -98,10 +86,10 @@ export function createApp(options: AppOptions = {}): Express {
 }
 
 function createRequestLogger(logger: Logger) {
-  return (_request: Request, response: Response, next: NextFunction): void => {
+  return (request: Request, response: Response, next: NextFunction): void => {
     response.on("finish", () => {
       logger.info(
-        { method: _request.method, statusCode: response.statusCode },
+        { method: request.method, statusCode: response.statusCode },
         "request",
       );
     });
