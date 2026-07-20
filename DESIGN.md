@@ -110,3 +110,21 @@ Use a borders-only strategy. The canvas is white and the CTA is the only filled 
 | Item | Location | Why accepted | Owner / Exit |
 |---|---|---|---|
 | No presenter dashboard | Whole app | The sample application's contract is attendee check-in only. | Add only if the presentation flow later requires a separate operator surface. |
+
+## 9. Runtime & Data Flow
+
+- One button press requests an opaque, HMAC-SHA256-signed session token once.
+- The browser stores only the token, expiry, and heartbeat interval in
+  localStorage so a refresh can resume the same short-lived session.
+- The token payload contains only a random session ID, issued-at time, and
+  expiry time. It contains no personal data, IP address, or User-Agent.
+- Heartbeats are awaited sequentially every three seconds for approximately
+  60 seconds and use `POST /api/check-ins/heartbeat` with Bearer Authorization.
+- The token is removed immediately when it expires or when the loop fails.
+- The existing AbortController remains the single owner of creation and
+  heartbeat work, preventing duplicate loops after repeated clicks or React
+  StrictMode restoration.
+- `servedBy` is retained as development-only DOM metadata for Task-level
+  observation. It adds no visible control or content to the restrained UI.
+- Any Fargate Task with the same signing secret can verify the token without
+  sticky sessions, Redis, a database, or a visual design change.

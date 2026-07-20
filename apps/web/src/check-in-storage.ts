@@ -25,7 +25,7 @@ const memoryStorage: Storage = {
 };
 
 const storedSessionSchema = z.object({
-  sessionId: z.string().uuid(),
+  sessionToken: z.string().min(1),
   expiresAt: z.string().datetime({ offset: true }),
   heartbeatIntervalMs: z.number().int().positive(),
 });

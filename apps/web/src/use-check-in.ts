@@ -21,16 +21,19 @@ export type CheckInStatus =
 type CheckInState = {
   readonly status: CheckInStatus;
   readonly message: string;
+  readonly servedBy: string | null;
 };
 
 const INITIAL_STATE: CheckInState = {
   status: "idle",
   message: "발표 데모에 참여해 주세요.",
+  servedBy: null,
 };
 
 export function useCheckIn(): CheckInState & { readonly start: () => void } {
   const [state, setState] = useState<CheckInState>(INITIAL_STATE);
   const controllerRef = useRef<AbortController | null>(null);
+  const lastServedByRef = useRef<string | null>(null);
   const mountedRef = useRef(true);
 
   const updateState = useCallback((next: CheckInState): void => {
@@ -70,7 +73,16 @@ export function useCheckIn(): CheckInState & { readonly start: () => void } {
 
       while (Date.now() < expiresAtMs && !controller.signal.aborted) {
         try {
-          await sendHeartbeat(session.sessionId, controller.signal);
+          const heartbeat = await sendHeartbeat(
+            session.sessionToken,
+            controller.signal,
+          );
+          lastServedByRef.current = heartbeat.servedBy;
+          updateState({
+            status: "active",
+            message: "이제 발표 화면을 확인해 주세요.",
+            servedBy: heartbeat.servedBy,
+          });
         } catch (error) {
           if (
             controller.signal.aborted ||
@@ -84,6 +96,7 @@ export function useCheckIn(): CheckInState & { readonly start: () => void } {
             updateState({
               status: "error",
               message: "연결을 확인하지 못했습니다. 다시 참여해 주세요.",
+              servedBy: lastServedByRef.current,
             });
             return;
           }
@@ -94,6 +107,7 @@ export function useCheckIn(): CheckInState & { readonly start: () => void } {
             updateState({
               status: "error",
               message: "연결을 확인하지 못했습니다. 다시 참여해 주세요.",
+              servedBy: lastServedByRef.current,
             });
             return;
           }
@@ -117,6 +131,7 @@ export function useCheckIn(): CheckInState & { readonly start: () => void } {
         updateState({
           status: "completed",
           message: "발표 화면을 확인해 주세요.",
+          servedBy: lastServedByRef.current,
         });
       }
     },
@@ -129,9 +144,11 @@ export function useCheckIn(): CheckInState & { readonly start: () => void } {
         return;
       }
       saveStoredSession(session);
+      lastServedByRef.current = null;
       updateState({
         status: "active",
         message: "이제 발표 화면을 확인해 주세요.",
+        servedBy: null,
       });
       void runHeartbeatLoop(session, controller).catch((error: unknown) => {
         if (
@@ -145,6 +162,7 @@ export function useCheckIn(): CheckInState & { readonly start: () => void } {
         updateState({
           status: "error",
           message: "연결을 확인하지 못했습니다. 다시 참여해 주세요.",
+          servedBy: lastServedByRef.current,
         });
       });
     },
@@ -152,11 +170,15 @@ export function useCheckIn(): CheckInState & { readonly start: () => void } {
   );
 
   const start = useCallback((): void => {
-    if (controllerRef.current !== null) {
-      return;
-    }
+    controllerRef.current?.abort();
+    clearStoredSession();
 
-    updateState({ status: "starting", message: "참여를 시작하고 있습니다." });
+    lastServedByRef.current = null;
+    updateState({
+      status: "starting",
+      message: "참여를 시작하고 있습니다.",
+      servedBy: null,
+    });
     const controller = new AbortController();
     controllerRef.current = controller;
     void createCheckIn(controller.signal)
@@ -172,6 +194,7 @@ export function useCheckIn(): CheckInState & { readonly start: () => void } {
         updateState({
           status: "error",
           message: "참여를 시작하지 못했습니다. 다시 시도해 주세요.",
+          servedBy: null,
         });
       });
   }, [beginSession, updateState]);
@@ -182,9 +205,11 @@ export function useCheckIn(): CheckInState & { readonly start: () => void } {
     if (storedSession !== null && controllerRef.current === null) {
       const controller = new AbortController();
       controllerRef.current = controller;
+      lastServedByRef.current = null;
       updateState({
         status: "active",
         message: "이제 발표 화면을 확인해 주세요.",
+        servedBy: null,
       });
       queueMicrotask(() => {
         if (controller.signal.aborted) {
@@ -203,6 +228,7 @@ export function useCheckIn(): CheckInState & { readonly start: () => void } {
             updateState({
               status: "error",
               message: "연결을 확인하지 못했습니다. 다시 참여해 주세요.",
+              servedBy: lastServedByRef.current,
             });
           },
         );
