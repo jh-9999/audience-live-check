@@ -3,9 +3,8 @@ import { useCheckIn } from "./use-check-in";
 import "./styles.css";
 
 export function CheckInApp(): ReactElement {
-  const { status, message, start } = useCheckIn();
-  const isButtonDisabled =
-    status === "starting" || status === "active" || status === "completed";
+  const { status, message, servedBy, start } = useCheckIn();
+  const isButtonDisabled = status === "starting";
   const statusLabel =
     status === "starting"
       ? "참여 시작 중"
@@ -17,7 +16,13 @@ export function CheckInApp(): ReactElement {
 
   return (
     <main className="page-shell">
-      <section className="check-in-panel" aria-labelledby="service-title">
+      <section
+        className="check-in-panel"
+        aria-labelledby="service-title"
+        data-served-by={
+          import.meta.env.DEV ? (servedBy ?? undefined) : undefined
+        }
+      >
         <p className="eyebrow">LIVE CHECK-IN</p>
         <h1 id="service-title">발표 데모에 참여해 주세요. 302호 해치웠나?</h1>
         <p className="privacy-note">별도의 개인정보는 저장하지 않습니다.</p>
@@ -30,9 +35,9 @@ export function CheckInApp(): ReactElement {
           {status === "starting"
             ? "참여 중..."
             : status === "active"
-              ? "참여 중..."
+              ? "다시 요청하기"
               : status === "completed"
-                ? "참여 완료"
+                ? "다시 요청하기"
                 : "참여하기"}
         </button>
         {statusLabel !== null ? (
